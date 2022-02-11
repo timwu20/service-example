@@ -105,7 +105,6 @@ func (fos *FanOutService) handleServiceErrors(i int, errChan chan error) {
 func (fos *FanOutService) Start() (errChan chan error, err error) {
 	var startWG sync.WaitGroup
 	startErrs := make([]error, 0)
-	// errChans := make([]chan error, 0)
 	for i := range fos.services {
 		startWG.Add(1)
 		go func(i int, s Service) {
@@ -120,7 +119,6 @@ func (fos *FanOutService) Start() (errChan chan error, err error) {
 		}(i, fos.services[i])
 	}
 	startWG.Wait()
-	// TODO: implement timeout if any service is failing, and shutdown any running services
 
 	if len(startErrs) != 0 {
 		err := fos.Stop()
