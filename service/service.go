@@ -10,3 +10,14 @@ type Service interface {
 	// does not block indefinitely.
 	Stop() (err error)
 }
+
+type BaseService struct {
+	ErrorChan chan error
+}
+
+func (bs *BaseService) Start() (errChan chan error, err error) {
+	return
+}
+func (bs *BaseService) Stop() error {
+	return nil
+}
