@@ -52,7 +52,7 @@ func (rs *RoundService) handleErrChans(errChan chan error, errChanA chan error, 
 				errChanA = nil
 			}
 			if err != nil {
-				errChan <- fmt.Errorf("error from serviceA: %w, stopping ServiceRound", err)
+				errChan <- fmt.Errorf("error from serviceA: %w, stopping RoundService", err)
 				err := rs.Stop()
 				if err != nil {
 					log.Printf("error stopping RoundService: %v\n", err)
@@ -63,7 +63,7 @@ func (rs *RoundService) handleErrChans(errChan chan error, errChanA chan error, 
 				errChanB = nil
 			}
 			if err != nil {
-				errChan <- fmt.Errorf("error from serviceB: %w, stopping ServiceRound", err)
+				errChan <- fmt.Errorf("error from serviceB: %w, stopping RoundService", err)
 				err := rs.Stop()
 				if err != nil {
 					log.Printf("error stopping RoundService: %v\n", err)
@@ -79,7 +79,7 @@ func (rs *RoundService) handleErrChans(errChan chan error, errChanA chan error, 
 func (sr *RoundService) Start() (errChan chan error, err error) {
 	errChanA, errChanB, err := sr.newRound(errChan)
 	if err != nil {
-		return nil, err
+		return
 	}
 
 	sr.wg.Add(1)
@@ -97,7 +97,7 @@ func (sr *RoundService) Start() (errChan chan error, err error) {
 			default:
 				errChanA, errChanB, err := sr.newRound(errChan)
 				if err != nil {
-					errChan <- fmt.Errorf("error calling newRound: %w", err)
+					errChan <- fmt.Errorf("error calling newRound: %w, stopping RoundService", err)
 					err := sr.Stop()
 					if err != nil {
 						log.Printf("error stopping RoundService: %v\n", err)
@@ -109,8 +109,7 @@ func (sr *RoundService) Start() (errChan chan error, err error) {
 
 		}
 	}()
-
-	return errChan, nil
+	return
 }
 
 func (sr *RoundService) Stop() (err error) {
@@ -134,10 +133,8 @@ func (sr *RoundService) Stop() (err error) {
 
 	if errs[0] != nil && !errors.Is(errs[0], ErrBaseServiceAlreadyStopped) {
 		err = errs[0]
-		return
 	} else if errs[1] != nil && !errors.Is(errs[1], ErrBaseServiceAlreadyStopped) {
 		err = errs[1]
-		return
 	}
 	return
 }
