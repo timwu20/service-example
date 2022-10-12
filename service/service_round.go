@@ -7,12 +7,15 @@ import (
 	"sync"
 )
 
+var ErrRoundServiceAlreadyStopped = ErrBaseServiceAlreadyStopped
+
 type RoundService struct {
 	serviceA    Service
 	serviceB    Service
 	newServices func() (serviceA Service, serviceB Service)
 	stopChan    chan interface{}
 	wg          sync.WaitGroup
+	closed      bool
 }
 
 func NewRoundService(newServices func() (serviceA Service, serviceB Service)) (sr *RoundService) {
@@ -53,10 +56,12 @@ func (rs *RoundService) handleErrChans(errChan chan error, errChanA chan error, 
 			}
 			if err != nil {
 				errChan <- fmt.Errorf("error from serviceA: %w, stopping RoundService", err)
-				err := rs.Stop()
-				if err != nil {
-					log.Printf("error stopping RoundService: %v\n", err)
-				}
+				go func() {
+					err := rs.Stop()
+					if err != nil {
+						log.Printf("error stopping RoundService: %v\n", err)
+					}
+				}()
 			}
 		case err, ok := <-errChanB:
 			if !ok {
@@ -64,56 +69,66 @@ func (rs *RoundService) handleErrChans(errChan chan error, errChanA chan error, 
 			}
 			if err != nil {
 				errChan <- fmt.Errorf("error from serviceB: %w, stopping RoundService", err)
-				err := rs.Stop()
-				if err != nil {
-					log.Printf("error stopping RoundService: %v\n", err)
-				}
+				go func() {
+					err := rs.Stop()
+					if err != nil {
+						log.Printf("error stopping RoundService: %v\n", err)
+					}
+				}()
 			}
 		}
 		if errChanA == nil && errChanB == nil {
-			break
+			return
 		}
 	}
 }
 
-func (sr *RoundService) Start() (errChan chan error, err error) {
-	errChanA, errChanB, err := sr.newRound(errChan)
+func (rs *RoundService) run(errChan chan error, errChanA chan error, errChanB chan error) {
+	defer rs.wg.Done()
+	defer close(errChan)
+	// 1st round
+	rs.handleErrChans(errChan, errChanA, errChanB)
+	// subsequent rounds
+	for {
+		select {
+		case <-rs.stopChan:
+			return
+		default:
+			errChanA, errChanB, err := rs.newRound(errChan)
+			if err != nil {
+				errChan <- fmt.Errorf("error calling newRound: %w, stopping RoundService", err)
+				go func() {
+					err := rs.Stop()
+					if err != nil {
+						log.Printf("error stopping RoundService: %v\n", err)
+					}
+				}()
+				return
+			}
+			rs.handleErrChans(errChan, errChanA, errChanB)
+		}
+
+	}
+}
+
+func (rs *RoundService) Start() (errChan chan error, err error) {
+	errChanA, errChanB, err := rs.newRound(errChan)
 	if err != nil {
 		return
 	}
 
-	sr.wg.Add(1)
+	rs.wg.Add(1)
 	errChan = make(chan error)
-	go func() {
-		defer sr.wg.Done()
-		defer close(errChan)
-		// 1st round
-		sr.handleErrChans(errChan, errChanA, errChanB)
-		// subsequent rounds
-		for {
-			select {
-			case <-sr.stopChan:
-				return
-			default:
-				errChanA, errChanB, err := sr.newRound(errChan)
-				if err != nil {
-					errChan <- fmt.Errorf("error calling newRound: %w, stopping RoundService", err)
-					err := sr.Stop()
-					if err != nil {
-						log.Printf("error stopping RoundService: %v\n", err)
-					}
-					return
-				}
-				sr.handleErrChans(errChan, errChanA, errChanB)
-			}
-
-		}
-	}()
+	go rs.run(errChan, errChanA, errChanB)
 	return
 }
 
-func (sr *RoundService) Stop() (err error) {
-	close(sr.stopChan)
+func (rs *RoundService) Stop() (err error) {
+	if rs.closed {
+		return ErrRoundServiceAlreadyStopped
+	}
+	rs.closed = true
+	close(rs.stopChan)
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
@@ -121,15 +136,15 @@ func (sr *RoundService) Stop() (err error) {
 	errs := [2]error{}
 	go func() {
 		defer wg.Done()
-		errs[0] = sr.serviceA.Stop()
+		errs[0] = rs.serviceA.Stop()
 	}()
 	go func() {
 		defer wg.Done()
-		errs[1] = sr.serviceB.Stop()
+		errs[1] = rs.serviceB.Stop()
 	}()
 
 	wg.Wait()
-	sr.wg.Wait()
+	rs.wg.Wait()
 
 	if errs[0] != nil && !errors.Is(errs[0], ErrBaseServiceAlreadyStopped) {
 		err = errs[0]
