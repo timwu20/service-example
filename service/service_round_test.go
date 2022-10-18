@@ -59,7 +59,7 @@ func TestRoundServiceMultipleClose(t *testing.T) {
 		}
 		err = sr.Stop()
 		if err != nil {
-			assert.ErrorIs(t, err, ErrBaseServiceAlreadyStopped)
+			assert.ErrorIs(t, err, ErrRoundServiceAlreadyStopped)
 		} else {
 			t.Errorf("expected error")
 		}

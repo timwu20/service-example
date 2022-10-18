@@ -13,6 +13,15 @@ type Service interface {
 	Stop() (err error)
 }
 
+type BlockingService interface {
+	// Start is a blocking function that will return an error in a fatal error, or nil on
+	// successful completion
+	Start() (err error)
+	// Stop will shutdown the BlockingService.  Packages that implement the SubService interface should implement a timeout to ensure Stop()
+	// does not block indefinitely. Will unblock the caller of Start()
+	Stop() (err error)
+}
+
 var ErrBaseServiceAlreadyStopped = fmt.Errorf("already stopped")
 
 type BaseService struct {

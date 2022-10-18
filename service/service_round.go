@@ -125,7 +125,7 @@ func (rs *RoundService) Start() (errChan chan error, err error) {
 
 func (rs *RoundService) Stop() (err error) {
 	if rs.closed {
-		return ErrRoundServiceAlreadyStopped
+		return ErrBaseServiceAlreadyStopped
 	}
 	rs.closed = true
 	close(rs.stopChan)
