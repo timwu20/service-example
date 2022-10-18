@@ -14,6 +14,8 @@ type BlockingServiceRound struct {
 	stopChan    chan interface{}
 	wg          sync.WaitGroup
 	closed      bool
+	roundDone   func()
+	sync.Mutex
 }
 
 func NewBlockingServiceRound(newServices func() (serviceA BlockingService, serviceB BlockingService)) (sr *BlockingServiceRound) {
@@ -34,23 +36,28 @@ func (rs *BlockingServiceRound) Start() (errChan chan error, err error) {
 
 	round:
 		for {
-			serviceA, serviceB := rs.newServices()
+			select {
+			case <-rs.stopChan:
+				break round
+			default:
+			}
 
-			rs.serviceA = serviceA
-			rs.serviceB = serviceB
+			rs.Lock()
+			rs.serviceA, rs.serviceB = rs.newServices()
+			rs.Unlock()
 
 			errsA := make(chan error)
 			errsB := make(chan error)
 			go func() {
 				defer close(errsA)
-				err := serviceA.Start()
+				err := rs.serviceA.Start()
 				if err != nil {
 					errsA <- err
 				}
 			}()
 			go func() {
 				defer close(errsB)
-				err := serviceB.Start()
+				err := rs.serviceB.Start()
 				if err != nil {
 					errsB <- err
 				}
@@ -79,6 +86,9 @@ func (rs *BlockingServiceRound) Start() (errChan chan error, err error) {
 					}
 				default:
 					if errsA == nil && errsB == nil {
+						if rs.roundDone != nil {
+							rs.roundDone()
+						}
 						break poll
 					}
 				}
@@ -98,6 +108,7 @@ func (rs *BlockingServiceRound) Stop() (err error) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(2)
+	rs.Lock()
 
 	errs := [2]error{}
 	go func() {
@@ -110,6 +121,8 @@ func (rs *BlockingServiceRound) Stop() (err error) {
 	}()
 
 	wg.Wait()
+	rs.Unlock()
+
 	rs.wg.Wait()
 
 	if errs[0] != nil && !errors.Is(errs[0], ErrBaseServiceAlreadyStopped) {
